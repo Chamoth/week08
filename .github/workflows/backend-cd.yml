@@ -101,4 +101,4 @@ jobs:
       - name: Logout from Azure
         run: az logout
 
-# Add a comment to test the Backend CD workflow
+# Add a comment to test the Backend CD workflow.
