@@ -86,8 +86,6 @@ jobs:
           kubectl -n ${{ env.K8S_NAMESPACE }} annotate deploy/order-service-w08e1   kubernetes.io/change-cause="Deploy $GITHUB_SHA" --overwrite
           kubectl -n ${{ env.K8S_NAMESPACE }} annotate deploy/frontend              kubernetes.io/change-cause="Deploy $GITHUB_SHA" --overwrite
 
-      - name: Wait for rollout
-        run: |
-          kubectl -n ${{ env.K8S_NAMESPACE }} rollout status deploy/product-service-w08e1 --timeout=300s
-          kubectl -n ${{ env.K8S_NAMESPACE }} rollout status deploy/order-service-w08e1   --timeout=300s
-          kubectl -n ${{ env.K8S_NAMESPACE }} rollout status deploy/frontend              --timeout=300s
+      - name: Skip rollout wait (dev only)
+        if: ${{ github.ref_name != 'main' }}
+        run: echo "Skipping rollout wait on dev."
