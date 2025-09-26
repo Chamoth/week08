@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: product-service-container
-        image: sit722w09acr99.azurecr.io/product_service:latest sit722w09acr.azurecr.io
+        image: sit722w09acr99.azurecr.io/product-service:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8000
