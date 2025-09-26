@@ -8,14 +8,14 @@ on:
       - "frontend/**"
       - ".github/workflows/**"
   push:
-    branches: [ "feat/**", "fix/**" ]
+    branches: [ "feat/**", "fix/**", "dev", "main" ]
     paths:
       - "backend/**"
       - "frontend/**"
 
 permissions:
   contents: read
-  id-token: write    # for OIDC login to Azure (no stored creds)
+  id-token: write       # required for azure/login OIDC
   packages: write
 
 concurrency:
@@ -23,20 +23,23 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
+  ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}   # e.g. sit722w09acr99.azurecr.io
 
 jobs:
   build-test-push:
     name: ${{ matrix.svc }} CI
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         svc: [ "product_service", "order_service", "frontend" ]
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Set service paths
         id: paths
+        shell: bash
         run: |
           if [[ "${{ matrix.svc }}" == "frontend" ]]; then
             echo "dir=frontend" >> $GITHUB_OUTPUT
@@ -53,8 +56,7 @@ jobs:
         if: matrix.svc == 'frontend'
         uses: actions/cache@v4
         with:
-          path: |
-            ${{ steps.paths.outputs.dir }}/node_modules
+          path: ${{ steps.paths.outputs.dir }}/node_modules
           key: ${{ runner.os }}-node-${{ hashFiles(format('{0}/package-lock.json', steps.paths.outputs.dir)) }}
 
       - name: Azure login (OIDC)
@@ -64,7 +66,8 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Build & unit tests (if any)
+      - name: Unit tests (if present)
+        shell: bash
         run: |
           cd "${{ steps.paths.outputs.dir }}"
           if [ -f package.json ]; then
@@ -74,8 +77,19 @@ jobs:
             echo "No JS tests for ${{ matrix.svc }}"
           fi
 
+      # Login to ACR using a short-lived token from az (no admin/password secrets)
+      - name: ACR login (token)
+        if: ${{ github.event_name != 'pull_request' }}
+        shell: bash
+        run: |
+          ACR_NAME="${ACR_LOGIN_SERVER%%.azurecr.io}"
+          TOKEN="$(az acr login -n "$ACR_NAME" --expose-token --query accessToken -o tsv)"
+          echo "$TOKEN" | docker login "$ACR_LOGIN_SERVER" \
+            -u 00000000-0000-0000-0000-000000000000 --password-stdin
+
       - name: Set tags
         id: tags
+        shell: bash
         run: |
           echo "sha=${GITHUB_SHA}" >> $GITHUB_OUTPUT
           echo "tags=${{ env.ACR_LOGIN_SERVER }}/${{ steps.paths.outputs.image }}:${GITHUB_SHA},${{ env.ACR_LOGIN_SERVER }}/${{ steps.paths.outputs.image }}:latest" >> $GITHUB_OUTPUT
@@ -84,7 +98,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ${{ steps.paths.outputs.dir }}
-          push: ${{ github.event_name != 'pull_request' }}  # push only on branch pushes
+          push: ${{ github.event_name != 'pull_request' }}   # push only on non-PR
           tags: ${{ steps.tags.outputs.tags }}
           labels: |
             org.opencontainers.image.source=${{ github.event.repository.html_url }}

@@ -34,7 +34,7 @@ jobs:
     name: Deploy
     runs-on: ubuntu-latest
 
-    # Map branch → environment
+    # Map branch → environment: main → prod, dev → dev, manual → input
     environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'main' && 'prod' || 'dev') }}
 
     steps:
@@ -57,26 +57,37 @@ jobs:
         run: |
           kubectl get ns ${{ env.K8S_NAMESPACE }} || kubectl create ns ${{ env.K8S_NAMESPACE }}
 
-      - name: Calculate image tags
+      - name: Calculate image tags (immutable)
         id: img
         run: |
           SHA="${GITHUB_SHA}"
-          echo "prod_tag=${{ env.ACR_LOGIN_SERVER }}/product-service:${SHA}" >> $GITHUB_OUTPUT
-          echo "ord_tag=${{ env.ACR_LOGIN_SERVER }}/order-service:${SHA}"   >> $GITHUB_OUTPUT
-          echo "fe_tag=${{ env.ACR_LOGIN_SERVER }}/frontend:${SHA}"        >> $GITHUB_OUTPUT
+          echo "prod=${{ env.ACR_LOGIN_SERVER }}/product-service:${SHA}" >> $GITHUB_OUTPUT
+          echo "ord=${{ env.ACR_LOGIN_SERVER }}/order-service:${SHA}"   >> $GITHUB_OUTPUT
+          echo "fe=${{ env.ACR_LOGIN_SERVER }}/frontend:${SHA}"        >> $GITHUB_OUTPUT
 
       - name: Apply K8s manifests
         run: |
           kubectl -n ${{ env.K8S_NAMESPACE }} apply -f k8s/
 
+      - name: Show current deployments (debug)
+        run: |
+          kubectl -n ${{ env.K8S_NAMESPACE }} get deploy -o wide
+
+      # IMPORTANT: use your ACTUAL deployment and container names
       - name: Update images to immutable tags
         run: |
-          kubectl -n ${{ env.K8S_NAMESPACE }} set image deploy/product-service  product-service=${{ steps.img.outputs.prod_tag }} --record
-          kubectl -n ${{ env.K8S_NAMESPACE }} set image deploy/order-service    order-service=${{ steps.img.outputs.ord_tag }}   --record
-          kubectl -n ${{ env.K8S_NAMESPACE }} set image deploy/frontend         frontend=${{ steps.img.outputs.fe_tag }}         --record
+          kubectl -n ${{ env.K8S_NAMESPACE }} set image deploy/product-service-w08e1 product-service-container=${{ steps.img.outputs.prod }}
+          kubectl -n ${{ env.K8S_NAMESPACE }} set image deploy/order-service-w08e1   order-service-container=${{ steps.img.outputs.ord }}
+          kubectl -n ${{ env.K8S_NAMESPACE }} set image deploy/frontend              frontend-container=${{ steps.img.outputs.fe }}
+
+      - name: Annotate change cause (optional)
+        run: |
+          kubectl -n ${{ env.K8S_NAMESPACE }} annotate deploy/product-service-w08e1 kubernetes.io/change-cause="Deploy $GITHUB_SHA" --overwrite
+          kubectl -n ${{ env.K8S_NAMESPACE }} annotate deploy/order-service-w08e1   kubernetes.io/change-cause="Deploy $GITHUB_SHA" --overwrite
+          kubectl -n ${{ env.K8S_NAMESPACE }} annotate deploy/frontend              kubernetes.io/change-cause="Deploy $GITHUB_SHA" --overwrite
 
       - name: Wait for rollout
         run: |
-          kubectl -n ${{ env.K8S_NAMESPACE }} rollout status deploy/product-service --timeout=120s
-          kubectl -n ${{ env.K8S_NAMESPACE }} rollout status deploy/order-service   --timeout=120s
-          kubectl -n ${{ env.K8S_NAMESPACE }} rollout status deploy/frontend        --timeout=180s
+          kubectl -n ${{ env.K8S_NAMESPACE }} rollout status deploy/product-service-w08e1 --timeout=300s
+          kubectl -n ${{ env.K8S_NAMESPACE }} rollout status deploy/order-service-w08e1   --timeout=300s
+          kubectl -n ${{ env.K8S_NAMESPACE }} rollout status deploy/frontend              --timeout=300s
