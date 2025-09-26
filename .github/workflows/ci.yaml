@@ -3,18 +3,17 @@ name: CI — Build & Test (Backend & Frontend)
 on:
   pull_request:
     branches: [ dev, main ]
-    # Run CI for any PR changes (remove paths filter so PRs always test)
   push:
     branches: [ dev, main, 'feat/**', 'fix/**' ]
     paths:
       - 'backend/**'
       - 'frontend/**'
-      - '.github/workflows/**'   # <— allow workflow edits to trigger CI
-  workflow_dispatch: {}           # <— manual run button
+      - '.github/workflows/**'
+  workflow_dispatch: {}
 
 permissions:
   contents: read
-  id-token: write       # required for azure/login OIDC
+  id-token: write
   packages: write
 
 concurrency:
@@ -22,7 +21,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}   # e.g. sit722w09acr99.azurecr.io
+  # e.g. sit722w09acr99.azurecr.io (configure in repo Settings → Actions → Variables)
+  ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
 
 jobs:
   build-test-push:
@@ -58,7 +58,8 @@ jobs:
           path: ${{ steps.paths.outputs.dir }}/node_modules
           key: ${{ runner.os }}-node-${{ hashFiles(format('{0}/package-lock.json', steps.paths.outputs.dir)) }}
 
-      - name: Azure login (OIDC)
+      - name: Azure login (OIDC) — only dev/main
+        if: ${{ github.ref_name == 'main' || github.ref_name == 'dev' }}
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -76,9 +77,8 @@ jobs:
             echo "No JS tests for ${{ matrix.svc }}"
           fi
 
-      # Login to ACR using a short-lived token from az (no admin/password secrets)
-      - name: ACR login (token)
-        if: ${{ github.event_name != 'pull_request' }}
+      - name: ACR login (token) — only dev/main
+        if: ${{ github.ref_name == 'main' || github.ref_name == 'dev' }}
         shell: bash
         run: |
           ACR_NAME="${ACR_LOGIN_SERVER%%.azurecr.io}"
@@ -93,11 +93,11 @@ jobs:
           echo "sha=${GITHUB_SHA}" >> $GITHUB_OUTPUT
           echo "tags=${{ env.ACR_LOGIN_SERVER }}/${{ steps.paths.outputs.image }}:${GITHUB_SHA},${{ env.ACR_LOGIN_SERVER }}/${{ steps.paths.outputs.image }}:latest" >> $GITHUB_OUTPUT
 
-      - name: Build & Push Docker image
+      - name: Build & Push Docker image (push only on dev/main)
         uses: docker/build-push-action@v6
         with:
           context: ${{ steps.paths.outputs.dir }}
-          push: ${{ github.event_name != 'pull_request' }}   # push only on non-PR
+          push: ${{ github.ref_name == 'main' || github.ref_name == 'dev' }}
           tags: ${{ steps.tags.outputs.tags }}
           labels: |
             org.opencontainers.image.source=${{ github.event.repository.html_url }}
