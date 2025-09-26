@@ -3,15 +3,14 @@ name: CI — Build & Test (Backend & Frontend)
 on:
   pull_request:
     branches: [ dev, main ]
-    paths:
-      - "backend/**"
-      - "frontend/**"
-      - ".github/workflows/**"
+    # Run CI for any PR changes (remove paths filter so PRs always test)
   push:
-    branches: [ "feat/**", "fix/**", "dev", "main" ]
+    branches: [ dev, main, 'feat/**', 'fix/**' ]
     paths:
-      - "backend/**"
-      - "frontend/**"
+      - 'backend/**'
+      - 'frontend/**'
+      - '.github/workflows/**'   # <— allow workflow edits to trigger CI
+  workflow_dispatch: {}           # <— manual run button
 
 permissions:
   contents: read
@@ -32,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        svc: [ "product_service", "order_service", "frontend" ]
+        svc: [ 'product_service', 'order_service', 'frontend' ]
 
     steps:
       - uses: actions/checkout@v4
